@@ -3,7 +3,9 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::fs::File;
 
+#[cfg(feature = "iui")]
 use iui::prelude::*;
+#[cfg(feature = "iui")]
 use iui::controls::{VerticalBox, Label, Button, LayoutGrid, GridAlignment, GridExpand, HorizontalSeparator, Group, HorizontalBox};
 
 mod patch;
@@ -110,7 +112,8 @@ fn patch_executable(path: &Path) -> Result<(), &'static str> {
     }
 }
 
-fn run_cli() -> Result<(), &'static str> {
+#[cfg(not(feature = "iui"))]
+fn run() -> Result<(), &'static str> {
     let args: Vec<String> = env::args().collect();
     if args.len() == 2 {
         let path = Path::new(&args[1]);
@@ -125,7 +128,8 @@ fn run_cli() -> Result<(), &'static str> {
     }
 }
 
-fn run_gui() {
+#[cfg(feature = "iui")]
+fn run() -> Result<(), &'static str> {
     let ui = UI::init().unwrap();
 
     let mut grid = LayoutGrid::new(&ui);
@@ -181,9 +185,9 @@ fn run_gui() {
     });
 
     ui.main();
+    Ok(())
 }
 
 fn main() -> Result<(), &'static str> {
-    run_gui();
-    Ok(())
+    run()
 }
