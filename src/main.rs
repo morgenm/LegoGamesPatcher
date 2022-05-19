@@ -3,6 +3,9 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::fs::File;
 
+use iui::prelude::*;
+use iui::controls::{VerticalBox, Label, Button, LayoutGrid, GridAlignment, GridExpand, HorizontalSeparator, Group, HorizontalBox};
+
 mod patch;
 
 fn copy_to_old(path: &Path) {
@@ -15,7 +18,7 @@ fn copy_to_old(path: &Path) {
             let mut old_ext = String::from(".");
             old_ext += ext.to_str().unwrap();
             old_copy_name = old_copy_name.replace(&old_ext, &new_ext); // Replace the original extension (.exe to _old.exe)
-            let mut old_copy_path_string = String::from(path.parent().unwrap().to_str().unwrap());
+            let mut old_copy_path_string = String::from(path.parent().unwrap().to_str().unwrap())+"/";
             old_copy_path_string += &old_copy_name;
 
             old_copy_path_string
@@ -32,89 +35,155 @@ fn copy_to_old(path: &Path) {
     std::fs::rename(path, old_copy_path).unwrap();
 }
 
-fn main() -> Result<(), &'static str> {
+fn patch_executable(path: &Path) -> Result<(), &'static str> {
+    // Open executable for read
+    let mut file = match File::open(&path) {
+        Err(_) => { return Err("Could not open file") },
+        Ok(f) => f,
+    };
+
+    let mut buf: Vec<u8> = Vec::new();
+    file.read_to_end(&mut buf).unwrap();
+    let mut patched = false;
+
+    match patch::get_game_type(&buf) {
+        Some((gt, file_pos)) => {
+            match gt {
+                patch::GameType::TSS => {
+                    println!("Detected that the executable is The Skywalker Saga!");
+
+                    // Actual patch occurs here
+                    patch::patch_tss_buf(&mut buf, file_pos);
+
+                    // Copy old file
+                    copy_to_old(&path);
+                    
+
+                    // Write the patched file file
+                    let mut patched_file = match File::create(&path) {
+                        Ok(f) => f,
+                        Err(_) => { return Err("Could not open file") },
+                    };
+
+                    match patched_file.write_all(&buf) {
+                        Ok(_) => {}
+                        Err(_) => { return Err("Error writing new patched file!")}
+                    }
+
+                    patched = true;
+                }
+                patch::GameType::Other => {
+                    println!("Detected that the executable is an older TT game!");
+
+                    // Actual patch occurs here
+                    patch::patch_other_buf(&mut buf, file_pos);
+
+                    // Copy old file
+                    copy_to_old(&path);
+                    
+
+                    // Write the patched file file
+                    let mut patched_file = match File::create(&path) {
+                        Ok(f) => f,
+                        Err(_) => { return Err("Could not open file") },
+                    };
+
+                    match patched_file.write_all(&buf) {
+                        Ok(_) => {}
+                        Err(_) => { return Err("Error writing new patched file!")}
+                    }
+                    patched = true;
+                }
+            }
+        }
+        None => {}
+    }
+
+    return match patched {
+        true => {
+            println!("Successfully patched!");
+            Ok(())
+        }
+        false => {
+            Err("The executable does not seem to be supported")
+        }
+    }
+}
+
+fn run_cli() -> Result<(), &'static str> {
     let args: Vec<String> = env::args().collect();
     if args.len() == 2 {
-        // Open executable for read
         let path = Path::new(&args[1]);
-        let mut file = match File::open(&path) {
-            Err(_) => { return Err("Could not open file") },
-            Ok(f) => f,
-        };
-        
-        let mut buf: Vec<u8> = Vec::new();
-        file.read_to_end(&mut buf).unwrap();
-        let mut patched = false;
+        patch_executable(path)
+    }
 
-        match patch::get_game_type(&buf) {
-            Some((gt, file_pos)) => {
-                match gt {
-                    patch::GameType::TSS => {
-                        println!("Detected that the executable is The Skywalker Saga!");
+    else if args.len() < 2 {
+        Err("Not enough arguments! Please specify the executable path!")
+    }
+    else {
+        Err("Too many arguments!")
+    }
+}
 
-                        // Actual patch occurs here
-                        patch::patch_tss_buf(&mut buf, file_pos);
+fn run_gui() {
+    let ui = UI::init().unwrap();
 
-                        // Copy old file
-                        copy_to_old(&path);
-                        
+    let mut grid = LayoutGrid::new(&ui);
+    grid.set_padded(&ui, true);
 
-                        // Write the patched file file
-                        let mut patched_file = match File::create(&path) {
-                            Ok(f) => f,
-                            Err(_) => { return Err("Could not open file") },
-                        };
+    // Create the input controls
+    let mut button = Button::new(&ui, "Patch executable");
+    let mut quit_button = Button::new(&ui, "Quit");
+    let label = Label::new(&ui, "Lego Games Patcher");
+    let label_about = Label::new(&ui, "This program patches TT Lego Game executables so custom DAT content\nand extracted DAT content can be loaded. This program can be found at\nGitHub at https://github.com/morgenm/LegoGamesPatcher and is licensed\nunder the MIT License.");
 
-                        match patched_file.write_all(&buf) {
-                            Ok(_) => {}
-                            Err(_) => { return Err("Error writing new patched file!")}
-                        }
+    // Set up the application's layout
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+    let mut window = Window::new(&ui, &format!("Lego Games Patcher {}", VERSION), 300, 200, WindowType::NoMenubar);
+    let mut vbox = VerticalBox::new(&ui);
+    vbox.set_padded(&ui, true);
+    vbox.append(&ui, label_about.clone(), LayoutStrategy::Compact);
 
-                        patched = true;
+    let mut group_vbox = VerticalBox::new(&ui);
+    let mut group = Group::new(&ui, "");
+    group_vbox.append(&ui, button.clone(), LayoutStrategy::Compact);
+    group_vbox.append(&ui, quit_button.clone(), LayoutStrategy::Compact);
+    group.set_child(&ui, group_vbox);
+    vbox.append(&ui, group, LayoutStrategy::Stretchy);
+
+    window.set_child(&ui, vbox);
+    window.show(&ui);
+    
+    quit_button.on_clicked(&ui, {
+        let ui = ui.clone();
+        move |_| {
+            ui.quit();
+        }
+    });
+
+    // Patch button gets path and patches the chosen file
+    button.on_clicked(&ui, {
+        let ui = ui.clone();
+        move |_| {
+            if let path = Path::new(&window.open_file(&ui).unwrap()) {
+                match patch_executable(&path) {
+                    Ok(()) => {
+                        window.modal_msg(&ui, "Success", &format!("Successfully patched file {:?}!", path));
                     }
-                    patch::GameType::Other => {
-                        println!("Detected that the executable is an older TT game!");
-
-                        // Actual patch occurs here
-                        patch::patch_other_buf(&mut buf, file_pos);
-
-                        // Copy old file
-                        copy_to_old(&path);
-                        
-
-                        // Write the patched file file
-                        let mut patched_file = match File::create(&path) {
-                            Ok(f) => f,
-                            Err(_) => { return Err("Could not open file") },
-                        };
-
-                        match patched_file.write_all(&buf) {
-                            Ok(_) => {}
-                            Err(_) => { return Err("Error writing new patched file!")}
-                        }
-                        patched = true;
+                    Err(e) => {
+                        window.modal_err(&ui, "Error Patching", &format!("Could not patch file {:?}! Error: {}", path, e));
                     }
                 }
             }
-            None => {}
-        }
-
-        return match patched {
-            true => {
-                println!("Successfully patched!");
-                Ok(())
-            }
-            false => {
-                Err("The executable does not seem to be supported")
+            else {
             }
         }
+    });
 
-    }
-    else if args.len() < 2 {
-        println!("Not enough arguments were passed! Please specify the executable's location.");
-        Err("Not enough args")
-    }
-    else {
-        Err("Too many args")
-    }
+    ui.main();
+}
+
+fn main() -> Result<(), &'static str> {
+    run_gui();
+    Ok(())
 }
