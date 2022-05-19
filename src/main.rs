@@ -1,3 +1,5 @@
+#![cfg_attr(feature="iui", windows_subsystem = "windows")]
+
 use std::env;
 use std::io::prelude::*;
 use std::path::Path;
@@ -10,17 +12,27 @@ use iui::controls::{VerticalBox, Label, Button, LayoutGrid, GridAlignment, GridE
 
 mod patch;
 
+#[cfg(feature = "iui")]
+fn get_parent_path_string(path: &Path) -> String {
+    String::from(path.parent().unwrap().to_str().unwrap())+"/"
+}
+
+#[cfg(not(feature = "iui"))]
+fn get_parent_path_string(path: &Path) -> String {
+    String::from(path.parent().unwrap().to_str().unwrap())
+}
+
 fn copy_to_old(path: &Path) {
     let old_copy_path = match path.extension() {
         Some(ext) => { // File has an extension
             // Copy old executable to _old
             let mut old_copy_name = String::from(path.file_name().unwrap().to_str().unwrap()); // Just the filename
-            let mut new_ext = String::from("_old."); 
+            let mut new_ext = String::from("_old.");
             new_ext += ext.to_str().unwrap(); // Add extension (.exe or whatever) to the renamed filename
             let mut old_ext = String::from(".");
             old_ext += ext.to_str().unwrap();
             old_copy_name = old_copy_name.replace(&old_ext, &new_ext); // Replace the original extension (.exe to _old.exe)
-            let mut old_copy_path_string = String::from(path.parent().unwrap().to_str().unwrap())+"/";
+            let mut old_copy_path_string = get_parent_path_string(&path);
             old_copy_path_string += &old_copy_name;
 
             old_copy_path_string
@@ -28,11 +40,11 @@ fn copy_to_old(path: &Path) {
         None => { // File has no extension, just add _old
             let mut old_copy_path_string = String::from(path.to_str().unwrap());
             old_copy_path_string += "_old";
-            
+
             old_copy_path_string
         }
     };
-    
+
     println!("Copying old file to {}",old_copy_path);
     std::fs::rename(path, old_copy_path).unwrap();
 }
@@ -59,7 +71,7 @@ fn patch_executable(path: &Path) -> Result<(), &'static str> {
 
                     // Copy old file
                     copy_to_old(&path);
-                    
+
 
                     // Write the patched file file
                     let mut patched_file = match File::create(&path) {
@@ -82,7 +94,7 @@ fn patch_executable(path: &Path) -> Result<(), &'static str> {
 
                     // Copy old file
                     copy_to_old(&path);
-                    
+
 
                     // Write the patched file file
                     let mut patched_file = match File::create(&path) {
@@ -139,25 +151,22 @@ fn run() -> Result<(), &'static str> {
     let mut button = Button::new(&ui, "Patch executable");
     let mut quit_button = Button::new(&ui, "Quit");
     let label = Label::new(&ui, "Lego Games Patcher");
-    let label_about = Label::new(&ui, "This program patches TT Lego Game executables so custom DAT content\nand extracted DAT content can be loaded. This program can be found at\nGitHub at https://github.com/morgenm/LegoGamesPatcher and is licensed\nunder the MIT License.");
+    let label_about = Label::new(&ui, "Patch TT games to allow custom content.");
+    let label_legal = Label::new(&ui, "https://github.com/morgenm/LegoGamesPatcher, MIT License.");
 
     // Set up the application's layout
     const VERSION: &str = env!("CARGO_PKG_VERSION");
-    let mut window = Window::new(&ui, &format!("Lego Games Patcher {}", VERSION), 300, 200, WindowType::NoMenubar);
-    let mut vbox = VerticalBox::new(&ui);
-    vbox.set_padded(&ui, true);
-    vbox.append(&ui, label_about.clone(), LayoutStrategy::Compact);
+    let mut window = Window::new(&ui, &format!("Lego Games Patcher {}", VERSION), 300, 200, WindowType::HasMenubar);
 
-    let mut group_vbox = VerticalBox::new(&ui);
-    let mut group = Group::new(&ui, "");
-    group_vbox.append(&ui, button.clone(), LayoutStrategy::Compact);
-    group_vbox.append(&ui, quit_button.clone(), LayoutStrategy::Compact);
-    group.set_child(&ui, group_vbox);
-    vbox.append(&ui, group, LayoutStrategy::Stretchy);
+    grid.append(&ui, label, 0, 0, 1, 1, GridExpand::Neither, GridAlignment::Fill, GridAlignment::Fill);
+    grid.append(&ui, label_about, 0, 1, 1, 1, GridExpand::Neither, GridAlignment::Center, GridAlignment::Fill);
+    grid.append(&ui, button.clone(), 0, 2, 1, 1, GridExpand::Neither, GridAlignment::Fill, GridAlignment::Fill);
+    grid.append(&ui, quit_button.clone(), 1, 2, 1, 1, GridExpand::Neither, GridAlignment::Fill, GridAlignment::Fill);
+    grid.append(&ui, label_legal.clone(), 0, 3, 1, 1, GridExpand::Neither, GridAlignment::Fill, GridAlignment::Fill);
 
-    window.set_child(&ui, vbox);
+    window.set_child(&ui, grid);
     window.show(&ui);
-    
+
     quit_button.on_clicked(&ui, {
         let ui = ui.clone();
         move |_| {
